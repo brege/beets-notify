@@ -15,21 +15,20 @@ If your notification service supports it, album art will be embedded in the noti
 Install
 -------
 
+**From PyPI (recommended):**
+
+.. code-block:: bash
+
+   $ pipx inject beets beets-notify
+
 **From source (development/testing):**
 
 .. code-block:: bash
 
    $ git clone https://github.com/brege/beets-notify
    $ cd beets-notify
-   $ pipx inject beets apprise
-   $ cp beetsplug/notify.py ~/.config/beets/plugins/
-
-**From PyPI (not published yet):**
-
-.. code-block:: bash
-
-   $ pipx inject beets apprise
-   $ pip install beets-notify
+   $ touch beetsplug/__init__.py
+   $ pipx inject beets .
 
 Apprise Urls
 ------------
@@ -58,10 +57,14 @@ Using an app-password `1234 5678 5a5c 3b3d` for the main email `account@fastmail
 
 .. _Fastmail: https://github.com/caronc/apprise/wiki/Notify_email-Fastmail
 
-``beets/config.yaml``
----------------------  
+Configuration
+-------------
+
+Enable the plugin in your ``~/.config/beets/config.yaml``:
 
 .. code-block:: yaml
+
+    plugins: notify
 
     notify:
         apprise_urls:
