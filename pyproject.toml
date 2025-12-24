@@ -4,36 +4,23 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beets-notify"
-version = "0.1.1"
+version = "0.2.0"
 description = "A beets plugin to send notifications when albums are imported"
-authors = [
-  { name = "beets community" },
-]
-license = "MIT"
 readme = "README.rst"
-requires-python = ">=3.8"
-dependencies = [
-    "beets>=1.6.0",
-    "apprise>=1.0.0",
+license = "MIT"
+
+authors = [
+  { name = "Wyatt Brege", email = "wyatt@brege.org" },
 ]
-classifiers = [
-  "Topic :: Multimedia :: Sound/Audio",
-  "License :: OSI Approved :: MIT License",
-  "Environment :: Console",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.8",
-  "Programming Language :: Python :: 3.9",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
+
+dependencies = [
+  "apprise>=1.0.0",
+  "Pillow>=9.0.0",
 ]
 
 [project.urls]
-Repository = "https://github.com/beetbox/beets"
-
-[tool.hatch.build.targets.sdist]
-include = ["/beetsplug", "/README.rst", "/LICENSE"]
+Repository = "https://github.com/brege/beets-notify"
 
 [tool.hatch.build.targets.wheel]
 packages = ["beetsplug"]
+
