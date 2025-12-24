@@ -160,6 +160,7 @@ class NotifyPlugin(BeetsPlugin):
                 "body_maxlength": 1024,
                 "artwork": True,
                 "artwork_maxsize": 0,  # 0 = use apprise's per-service limits
+                "collage": True,
             }
         )
 
@@ -246,25 +247,40 @@ class NotifyPlugin(BeetsPlugin):
         if len(body) > max_length:
             body = body[: max_length - 3] + "..."
 
-        # Collect artwork paths and generate collage if enabled.
+        # Collect artwork and handle based on collage setting.
         if self.config["artwork"]:
-            art_paths = []
-            for album in imported_albums:
-                if album.artpath:
-                    try:
-                        if isinstance(album.artpath, bytes):
-                            art_path = album.artpath.decode("utf-8")
-                        else:
-                            art_path = album.artpath
-                        art_paths.append(art_path)
-                    except Exception as e:
-                        self._log.debug("failed to process artwork: {}", e)
+            if self.config["collage"]:
+                art_paths = []
+                for album in imported_albums:
+                    if album.artpath:
+                        try:
+                            if isinstance(album.artpath, bytes):
+                                art_path = album.artpath.decode("utf-8")
+                            else:
+                                art_path = album.artpath
+                            art_paths.append(art_path)
+                        except Exception as e:
+                            self._log.debug("failed to process artwork: {}", e)
 
-            if art_paths:
-                max_size = self.config["artwork_maxsize"].get(int)
-                try:
-                    artwork_path = generate_collage(art_paths, max_filesize=max_size)
-                except Exception as e:
-                    self._log.debug("failed to generate collage: {}", e)
+                if art_paths:
+                    max_size = self.config["artwork_maxsize"].get(int)
+                    try:
+                        artwork_path = generate_collage(art_paths, max_filesize=max_size)
+                    except Exception as e:
+                        self._log.debug("failed to generate collage: {}", e)
+            else:
+                # Collage disabled, use first album's artwork.
+                for album in imported_albums:
+                    if album.artpath:
+                        try:
+                            if isinstance(album.artpath, bytes):
+                                art_path = album.artpath.decode("utf-8")
+                            else:
+                                art_path = album.artpath
+                            max_size = self.config["artwork_maxsize"].get(int)
+                            artwork_path = resize_artwork(art_path, max_filesize=max_size)
+                            break
+                        except Exception as e:
+                            self._log.debug("failed to process artwork: {}", e)
 
         return title, body, artwork_path
