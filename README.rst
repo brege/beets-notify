@@ -27,8 +27,7 @@ Install
 
    $ git clone https://github.com/brege/beets-notify
    $ cd beets-notify
-   $ touch beetsplug/__init__.py
-   $ pipx inject beets .
+   $ pipx inject beets -e .
 
 Apprise Urls
 ------------
@@ -70,9 +69,8 @@ Enable the plugin in your ``~/.config/beets/config.yaml``:
         apprise_urls:
             - "pover://abcdefghijklmnopqrstuvwxyz1234@xyz1234zbcdefghijklmnopqrstuvw"
         truncate: 3                  # albums to enumerate before truncating (...)
-        body_maxlength: 512          # max body chars (pushover: 1024)
+        body_maxlength: 1024         # max body chars
         artwork: yes                 # attach artwork
-        artwork_maxsize: 1000000     # (bytes) limits (pushover: 5MB)
-        show_first_art: yes          # show art for multiple album imports
-
+        artwork_maxsize: 0           # max file size in bytes (0 = service limits)
+        collage: yes                 # generate NxM collage grid of artwork (max 3x3)
 
