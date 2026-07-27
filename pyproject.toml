@@ -4,23 +4,86 @@ build-backend = "hatchling.build"
 
 [project]
 name = "beets-notify"
-version = "0.2.1"
+version = "0.2.2"
 description = "A beets plugin to send notifications when albums are imported"
 readme = "README.rst"
 license = "MIT"
-
+requires-python = ">=3.10"
 authors = [
   { name = "Wyatt Brege", email = "wyatt@brege.org" },
 ]
-
 dependencies = [
   "apprise>=1.0.0",
-  "Pillow>=9.0.0",
+  "beets>=2.10.0",
+  "Pillow>=9.1.0",
 ]
 
 [project.urls]
 Repository = "https://github.com/brege/beets-notify"
 
+[dependency-groups]
+dev = [
+  "build>=1.4.0",
+  "mypy>=2.3.0",
+  "pytest>=9.1.1",
+  "ruff>=0.16.0",
+  "types-Pillow>=10.2.0.20240822",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["beetsplug"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+  "/.pre-commit-config.yaml",
+  "/beetsplug",
+  "/tests",
+  "/LICENSE",
+  "/README.rst",
+  "/pyproject.toml",
+  "/uv.lock",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 80
+
+[tool.ruff.format]
+skip-magic-trailing-comma = true
+
+[tool.ruff.lint]
+future-annotations = true
+select = [
+  "A",
+  "E",
+  "F",
+  "G",
+  "I",
+  "ISC",
+  "N",
+  "PIE",
+  "PT",
+  "RET",
+  "RUF",
+  "TC",
+  "UP",
+  "W",
+]
+
+[tool.ruff.lint.isort]
+split-on-trailing-comma = false
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 88
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+parametrize-names-type = "csv"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["beetsplug", "tests"]
+explicit_package_bases = true
+follow_untyped_imports = true
+check_untyped_defs = true

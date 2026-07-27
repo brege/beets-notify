@@ -12,17 +12,27 @@
 
 """Sends notifications on import completion via Apprise."""
 
+from __future__ import annotations
+
 import os
 import tempfile
+from typing import TYPE_CHECKING
 
 import apprise
-from PIL import Image, ImageDraw, ImageFont
-
+from apprise.exception import AppriseException
 from beets.plugins import BeetsPlugin
 from beets.util.artresizer import ArtResizer
+from PIL import Image, ImageDraw, ImageFont
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from beets.library import Album, Library
 
 
-def resize_artwork(art_path, max_filesize=0):
+def resize_artwork(
+    art_path: os.PathLike[str] | str | bytes, max_filesize: int = 0
+) -> str:
     """Return path to resized artwork, or original if no resize needed.
 
     The new extension must not contain a leading dot.
@@ -30,23 +40,33 @@ def resize_artwork(art_path, max_filesize=0):
     current_size = os.path.getsize(art_path)
 
     if max_filesize == 0 or current_size <= max_filesize:
-        return art_path
+        return os.fsdecode(art_path)
 
     # Resize the image to meet filesize constraint.
-    resizer = ArtResizer()
-    _, ext = os.path.splitext(art_path)
-    tmp_file = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    resized_path = resizer.resize(
-        maxwidth=1000,
-        path_in=art_path,
-        path_out=tmp_file.name,
-        max_filesize=max_filesize,
-    )
+    _, ext = os.path.splitext(os.fsdecode(art_path))
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
+        output_path = os.fsencode(tmp_file.name)
 
-    return resized_path
+    try:
+        resized_path = ArtResizer.shared.resize(
+            maxwidth=1000,
+            path_in=os.fsencode(art_path),
+            path_out=output_path,
+            max_filesize=max_filesize,
+        )
+    except Exception:
+        os.unlink(output_path)
+        raise
+
+    if resized_path != output_path:
+        os.unlink(output_path)
+
+    return os.fsdecode(resized_path)
 
 
-def generate_collage(art_paths, max_filesize=0):
+def generate_collage(
+    art_paths: Sequence[os.PathLike[str] | str | bytes], max_filesize: int = 0
+) -> str | None:
     """Generate a grid collage from album artwork paths.
 
     Grid layout progression:
@@ -92,23 +112,28 @@ def generate_collage(art_paths, max_filesize=0):
     loaded_count = 0
     for i in range(min(images_to_show, len(art_paths))):
         art_path = art_paths[i]
+        resized_path = None
 
         try:
             resized_path = resize_artwork(art_path, max_filesize=max_filesize)
-            img = Image.open(resized_path)
+            with Image.open(resized_path) as img:
+                img.thumbnail((cell_size, cell_size), Image.Resampling.LANCZOS)
 
-            img.thumbnail((cell_size, cell_size), Image.Resampling.LANCZOS)
+                row = i // cols
+                col = i % cols
+                x = col * cell_size
+                y = row * cell_size
 
-            row = i // cols
-            col = i % cols
-            x = col * cell_size
-            y = row * cell_size
-
-            canvas.paste(img, (x, y))
+                canvas.paste(img, (x, y))
             loaded_count += 1
 
-        except Exception:
+        except (OSError, ValueError, Image.DecompressionBombError):
             pass
+        finally:
+            if resized_path and os.fsencode(resized_path) != os.fsencode(
+                art_path
+            ):
+                os.unlink(resized_path)
 
     if loaded_count == 0:
         return None
@@ -123,35 +148,40 @@ def generate_collage(art_paths, max_filesize=0):
         y = row * cell_size
 
         draw = ImageDraw.Draw(canvas)
-        overlay = Image.new("RGBA", (cell_size, cell_size), (200, 200, 200, 180))
+        overlay = Image.new(
+            "RGBA", (cell_size, cell_size), (200, 200, 200, 180)
+        )
         canvas.paste(overlay, (x, y), overlay)
 
         text = f"+{remaining} more"
         try:
             font = ImageFont.load_default(size=40)
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            text_x = x + (cell_size - text_width) // 2
-            text_y = y + (cell_size - text_height) // 2
-            draw.text((text_x, text_y), text, fill="black", font=font)
-        except Exception:
-            pass
+        except (OSError, TypeError):
+            font = ImageFont.load_default()
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = x + (cell_size - text_width) // 2
+        text_y = y + (cell_size - text_height) // 2
+        draw.text((text_x, text_y), text, fill="black", font=font)
 
     # Save collage.
-    tmp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-    canvas.save(tmp_file.name, "PNG")
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
+        collage_path = tmp_file.name
 
-    return tmp_file.name
+    canvas.save(collage_path, "PNG")
+    canvas.close()
+
+    return collage_path
 
 
 class NotifyPlugin(BeetsPlugin):
     """Send notifications when imports complete."""
 
-    imported_albums = []
-
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
+        self.imported_albums: list[Album] = []
 
         self.config.add(
             {
@@ -169,11 +199,11 @@ class NotifyPlugin(BeetsPlugin):
         self.register_listener("album_imported", self.album_imported)
         self.register_listener("cli_exit", self.notify_on_cli_exit)
 
-    def album_imported(self, lib, album):
+    def album_imported(self, lib: Library, album: Album) -> None:
         """Collect imported albums for batch notification."""
         self.imported_albums.append(album)
 
-    def notify_on_cli_exit(self, lib):
+    def notify_on_cli_exit(self, lib: Library) -> None:
         """Send notification when CLI exits if albums were imported."""
         if not self.imported_albums:
             return
@@ -183,16 +213,15 @@ class NotifyPlugin(BeetsPlugin):
         )
         self.send_notification(lib, self.imported_albums)
 
-    def send_notification(self, lib, imported_albums):
+    def send_notification(
+        self, lib: Library, imported_albums: Sequence[Album]
+    ) -> None:
         """Send notification via Apprise."""
         urls = self.config["apprise_urls"].as_str_seq()
 
         if not urls:
             self._log.debug("no apprise URLs configured")
             return
-
-        # Build notification content.
-        title, body, artwork_path = self.build_message(imported_albums)
 
         # Initialize Apprise and add URLs.
         apobj = apprise.Apprise()
@@ -204,10 +233,15 @@ class NotifyPlugin(BeetsPlugin):
             self._log.error("no valid apprise URLs configured")
             return
 
+        # Build notification content.
+        title, body, artwork_path = self.build_message(imported_albums)
+
         # Send notification.
         try:
             if artwork_path:
-                success = apobj.notify(title=title, body=body, attach=artwork_path)
+                success = apobj.notify(
+                    title=title, body=body, attach=artwork_path
+                )
             else:
                 success = apobj.notify(title=title, body=body)
 
@@ -216,10 +250,21 @@ class NotifyPlugin(BeetsPlugin):
             else:
                 self._log.error("notification failed")
 
-        except Exception as e:
-            self._log.error("notification error: {}", e)
+        except (AppriseException, OSError) as error:
+            self._log.error("notification error: {}", error)
+        finally:
+            # Delete generated files without touching album artwork.
+            source_art = {
+                os.fsencode(art_path)
+                for album in imported_albums
+                if (art_path := album.art_filepath)
+            }
+            if artwork_path and os.fsencode(artwork_path) not in source_art:
+                os.unlink(artwork_path)
 
-    def build_message(self, imported_albums):
+    def build_message(
+        self, imported_albums: Sequence[Album]
+    ) -> tuple[str, str, str | None]:
         """Build notification title, body, and optional artwork path."""
         truncate = self.config["truncate"].get(int)
         max_albums = min(len(imported_albums), truncate)
@@ -232,8 +277,10 @@ class NotifyPlugin(BeetsPlugin):
         body_lines = []
         artwork_path = None
 
-        for i, album in enumerate(imported_albums[:max_albums]):
-            body_lines.append(f"{album.albumartist} - {album.album} ({album.year})")
+        for album in imported_albums[:max_albums]:
+            body_lines.append(
+                f"{album.albumartist} - {album.album} ({album.year})"
+            )
 
         body = "\n".join(body_lines)
 
@@ -252,35 +299,30 @@ class NotifyPlugin(BeetsPlugin):
             if self.config["collage"]:
                 art_paths = []
                 for album in imported_albums:
-                    if album.artpath:
-                        try:
-                            if isinstance(album.artpath, bytes):
-                                art_path = album.artpath.decode("utf-8")
-                            else:
-                                art_path = album.artpath
-                            art_paths.append(art_path)
-                        except Exception as e:
-                            self._log.debug("failed to process artwork: {}", e)
+                    if album.art_filepath:
+                        art_paths.append(album.art_filepath)
 
                 if art_paths:
                     max_size = self.config["artwork_maxsize"].get(int)
                     try:
-                        artwork_path = generate_collage(art_paths, max_filesize=max_size)
-                    except Exception as e:
-                        self._log.debug("failed to generate collage: {}", e)
+                        artwork_path = generate_collage(
+                            art_paths, max_filesize=max_size
+                        )
+                    except OSError as error:
+                        self._log.debug("failed to generate collage: {}", error)
             else:
                 # Collage disabled, use first album's artwork.
                 for album in imported_albums:
-                    if album.artpath:
+                    if album.art_filepath:
                         try:
-                            if isinstance(album.artpath, bytes):
-                                art_path = album.artpath.decode("utf-8")
-                            else:
-                                art_path = album.artpath
                             max_size = self.config["artwork_maxsize"].get(int)
-                            artwork_path = resize_artwork(art_path, max_filesize=max_size)
+                            artwork_path = resize_artwork(
+                                album.art_filepath, max_filesize=max_size
+                            )
                             break
-                        except Exception as e:
-                            self._log.debug("failed to process artwork: {}", e)
+                        except (OSError, Image.DecompressionBombError) as error:
+                            self._log.debug(
+                                "failed to process artwork: {}", error
+                            )
 
         return title, body, artwork_path
